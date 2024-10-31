@@ -119,6 +119,12 @@ fn run_participant(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
 fn main() {
     // Parse CLI arguments
     let opts = tpcoptions::TPCOptions::new();
+
+    // Print out options for debug verification purposes
+    if opts.debug_verbosity > 0 {
+        opts.print_opts();
+    }
+    
     // Set-up logging and create OpLog path if necessary
     stderrlog::new()
             .module(module_path!())

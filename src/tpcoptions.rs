@@ -21,6 +21,7 @@ pub struct TPCOptions {
     pub num_requests: u32,                    // Number of requests issued per client
     pub num_participants: u32,                // Number of participants in 2PC protocol (not including coordinator)
     pub verbosity: usize,                     // Integer verbosity level. experiment with 0 (default) to 5 (fire-hose of output)
+    pub debug_verbosity: usize,               // Integer debug verbosity level 
     pub mode: String,                         // One of "run", "client", "particpant", "check"
     pub log_path: String,                     // Directory for client, participant, and coordinator logs
     pub ipc_path: String,                     // Path to IPC socket for setting up communication with the coordinator
@@ -42,6 +43,7 @@ impl TPCOptions {
         let default_num_clients = "3";
         let default_num_requests = "15";
         let default_verbosity = "0";
+        let default_debug_verbosity = "0";
         let default_mode = "run";
         let default_log_path = "./logs/";
         let default_ipc_path = "none";
@@ -82,6 +84,11 @@ impl TPCOptions {
                     .required(false)
                     .takes_value(true)
                     .help("Output verbosity: 0->No Output, 5->Output Everything"))
+            .arg(Arg::with_name("debug_verbosity")
+                    .short("d")
+                    .required(false)
+                    .takes_value(true)
+                    .help("Output debug verbosity: 0->No Output, 5->Output Everything"))
             .arg(Arg::with_name("log_path")
                     .short("l")
                     .required(false)
@@ -112,6 +119,7 @@ impl TPCOptions {
         let num_participants = matches.value_of("num_participants").unwrap_or(default_num_participants).parse::<u32>().unwrap();
         let num_requests = matches.value_of("num_requests").unwrap_or(default_num_requests).parse::<u32>().unwrap();
         let verbosity = matches.value_of("verbosity").unwrap_or(default_verbosity).parse::<usize>().unwrap();
+        let debug_verbosity = matches.value_of("debug_verbosity").unwrap_or(default_debug_verbosity).parse::<usize>().unwrap();
         let log_path = matches.value_of("log_path").unwrap_or(default_log_path);
         let ipc_path = matches.value_of("ipc_path").unwrap_or(default_ipc_path);
         let num = matches.value_of("num").unwrap_or(default_num).parse::<u32>().unwrap();
@@ -140,6 +148,7 @@ impl TPCOptions {
             num_participants: num_participants,
             num_requests: num_requests,
             verbosity: verbosity,
+            debug_verbosity: debug_verbosity,
             mode: mode.to_string(),
             log_path: log_path.to_string(),
             ipc_path: ipc_path.to_string(),
@@ -160,10 +169,28 @@ impl TPCOptions {
             format!("-r{}", self.num_requests),
             format!("-p{}", self.num_participants),
             format!("-v{}", self.verbosity),
+            format!("-d{}", self.debug_verbosity),
             format!("-m{}", self.mode),
             format!("-l{}", self.log_path),
             format!("--ipc_path={}", self.ipc_path),
             format!("--num={}", self.num),
         ]
     }
+
+    ///
+    /// Print CLI options to the terminal
+    ///
+    pub fn print_opts(&self) {
+        println!("send_success_probability: {}", self.send_success_probability);
+        println!("operation_success_probability: {}", self.operation_success_probability);
+        println!("num_clients: {}", self.num_clients);
+        println!("num_requests: {}", self.num_requests);
+        println!("num_participants: {}", self.num_participants);
+        println!("verbosity: {}", self.verbosity);
+        println!("debug_verbosity: {}", self.debug_verbosity);
+        println!("mode: {}", self.mode);
+        println!("log_path: {}", self.log_path);
+        println!("ipc_path: {}", self.ipc_path);
+        println!("num: {}", self.num);
+    } 
 }
