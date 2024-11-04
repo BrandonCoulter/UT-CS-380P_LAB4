@@ -9,6 +9,7 @@ use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::process::{Child,Command};
+use coordinator::Coordinator;
 use ipc_channel::ipc::IpcSender as Sender;
 use ipc_channel::ipc::IpcReceiver as Receiver;
 use ipc_channel::ipc::IpcOneShotServer;
@@ -42,7 +43,11 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 
     let (tx, rx) = channel().unwrap();
     // TODO
+    
 
+
+
+    // Return the Child, and communication channels
     (child, tx, rx)
 }
 
@@ -83,6 +88,52 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     let coord_log_path = format!("{}//{}", opts.log_path, "coordinator.log");
 
     // TODO
+    // 1. Creates a new coordinator
+    let mut coordinator = Coordinator::new(coord_log_path.clone(), &running);
+
+    // 2. Spawns and connects to new clients processes and then registers them with
+    //    the coordinator
+    let mut clients: Vec<Child> = Vec::new();
+
+    for _ in 0..opts.num_clients {
+        let mut client_opts = opts.clone();
+        client_opts.mode = "client".to_string();
+
+        let (child, tx, rx) = spawn_child_and_connect(&mut client_opts);
+
+        // coordinator.client_join(name, tx, rx);
+
+        clients.push(child);
+
+    }
+
+    // 3. Spawns and connects to new participant processes and then registers them
+    //    with the coordinator
+    let mut participants: Vec<Child> = Vec::new();
+
+    for _ in 0..opts.num_participants {
+        let mut participant_opts = opts.clone();
+        participant_opts.mode = "participant".to_string();
+
+        let (child, tx, rx) = spawn_child_and_connect(&mut participant_opts);
+
+        // coordinator.participant_join(name, tx, rx);
+
+        participants.push(child);
+    }
+
+    // 4. Starts the coordinator protocol
+    coordinator.protocol();
+
+    // 5. Wait until the children finish execution
+    for mut client in clients{
+        let _ = client.wait();
+    }
+
+    for mut participant in participants{
+        let _ = participant.wait();
+    }
+
 }
 
 ///
