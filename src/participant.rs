@@ -2,6 +2,7 @@
 //! participant.rs
 //! Implementation of 2PC participant
 //!
+#[allow(unused)]
 extern crate ipc_channel;
 extern crate log;
 extern crate rand;

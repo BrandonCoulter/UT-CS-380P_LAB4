@@ -1,4 +1,5 @@
 #[macro_use]
+#[allow(unused)]
 extern crate log;
 extern crate stderrlog;
 extern crate clap;
@@ -9,7 +10,6 @@ use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::process::{Child,Command};
-use coordinator::Coordinator;
 use ipc_channel::ipc::IpcSender as Sender;
 use ipc_channel::ipc::IpcReceiver as Receiver;
 use ipc_channel::ipc::IpcOneShotServer;
@@ -87,21 +87,21 @@ fn connect_to_coordinator(opts: &tpcoptions::TPCOptions) -> (Sender<ProtocolMess
 fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     let coord_log_path = format!("{}//{}", opts.log_path, "coordinator.log");
 
-    // TODO
     // 1. Creates a new coordinator
-    let mut coordinator = Coordinator::new(coord_log_path.clone(), &running);
+    let mut coordinator = coordinator::Coordinator::new(coord_log_path.clone(), &running);
 
     // 2. Spawns and connects to new clients processes and then registers them with
     //    the coordinator
     let mut clients: Vec<Child> = Vec::new();
 
-    for _ in 0..opts.num_clients {
+    for i in 0..opts.num_clients {
         let mut client_opts = opts.clone();
         client_opts.mode = "client".to_string();
+        client_opts.num = i;
 
         let (child, tx, rx) = spawn_child_and_connect(&mut client_opts);
-
-        // coordinator.client_join(name, tx, rx);
+        let name = format!("client_{}", i);
+        coordinator.client_join(&name, tx, rx);
 
         clients.push(child);
 
@@ -111,13 +111,14 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     //    with the coordinator
     let mut participants: Vec<Child> = Vec::new();
 
-    for _ in 0..opts.num_participants {
+    for i in 0..opts.num_participants {
         let mut participant_opts = opts.clone();
         participant_opts.mode = "participant".to_string();
 
         let (child, tx, rx) = spawn_child_and_connect(&mut participant_opts);
+        let name = format!("participant_{}", i);
 
-        // coordinator.participant_join(name, tx, rx);
+        coordinator.participant_join(&name, tx, rx);
 
         participants.push(child);
     }
@@ -147,7 +148,16 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
 /// 3. Starts the client protocol
 ///
 fn run_client(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
-    // TODO
+    // 1. Connects to the coordinator to get tx/rx
+    let (tx, rx) = connect_to_coordinator(opts);
+    let client_id_str = format!("client_{}", opts.num);
+
+    // 2. Constructs a new client
+    let mut client = client::Client::new(client_id_str, running); //TODO Add channels
+
+    // 3. Starts the client protocol
+    client.protocol(opts.num_requests);
+
 }
 
 ///
@@ -164,7 +174,14 @@ fn run_participant(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     let participant_id_str = format!("participant_{}", opts.num);
     let participant_log_path = format!("{}//{}.log", opts.log_path, participant_id_str);
 
-    // TODO
+    // 1. Connects to the coordinator to get tx/rx
+    let (tx, rx) = connect_to_coordinator(opts);
+
+    // 2. Constructs a new participant
+    let mut participant = participant::Participant::new(participant_id_str, participant_log_path, running, opts.send_success_probability, opts.operation_success_probability); //TODO Add channels
+
+    // 3. Starts the participant protocol
+    participant.protocol();
 }
 
 fn main() {

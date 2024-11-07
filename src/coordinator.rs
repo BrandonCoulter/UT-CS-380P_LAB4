@@ -2,6 +2,7 @@
 //! coordinator.rs
 //! Implementation of 2PC coordinator
 //!
+#[allow(unused)]
 extern crate log;
 extern crate stderrlog;
 extern crate rand;
@@ -44,6 +45,8 @@ pub struct Coordinator {
     state: CoordinatorState,
     running: Arc<AtomicBool>,
     log: oplog::OpLog,
+    participants: HashMap<String, (Sender<ProtocolMessage>, Receiver<ProtocolMessage>)>,
+    clients: HashMap<String, (Sender<ProtocolMessage>, Receiver<ProtocolMessage>)>,
 }
 
 ///
@@ -75,6 +78,8 @@ impl Coordinator {
             log: oplog::OpLog::new(log_path),
             running: r.clone(),
             // TODO
+            participants: HashMap::new(),
+            clients: HashMap::new(),
         }
     }
 
@@ -85,10 +90,11 @@ impl Coordinator {
     /// HINT: Keep track of any channels involved!
     /// HINT: You may need to change the signature of this function
     ///
-    pub fn participant_join(&mut self, name: &String) {
+    pub fn participant_join(&mut self, name: &String, tx: Sender<ProtocolMessage>,rx: Receiver<ProtocolMessage>) {
         assert!(self.state == CoordinatorState::Quiescent);
 
-        // TODO
+        // Add the participant to the be tracked by the coordinator
+        self.participants.insert(name.clone(), (tx, rx));
     }
 
     ///
@@ -98,10 +104,11 @@ impl Coordinator {
     /// HINT: Keep track of any channels involved!
     /// HINT: You may need to change the signature of this function
     ///
-    pub fn client_join(&mut self, name: &String) {
+    pub fn client_join(&mut self, name: &String, tx: Sender<ProtocolMessage>,rx: Receiver<ProtocolMessage>) {
         assert!(self.state == CoordinatorState::Quiescent);
 
-        // TODO
+        // Add the clients to the be tracked by the coordinator
+        self.clients.insert(name.clone(), (tx, rx));
     }
 
     ///

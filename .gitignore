@@ -23,4 +23,5 @@ Cargo.lock
 #Ignore custom
 alias.bashrc
 .codio
+logs/*
 

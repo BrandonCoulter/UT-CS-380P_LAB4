@@ -2,6 +2,7 @@
 //! client.rs
 //! Implementation of 2PC client
 //!
+#[allow(unused)]
 extern crate ipc_channel;
 extern crate log;
 extern crate stderrlog;
