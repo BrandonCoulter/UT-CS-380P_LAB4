@@ -90,6 +90,9 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     // 1. Creates a new coordinator
     let mut coordinator = coordinator::Coordinator::new(coord_log_path.clone(), &running);
 
+    // Create the IPCOneShotServer
+    let (server, server_name):(IpcOneShotServer<ProtocolMessage>,String)= IpcOneShotServer::new().unwrap();
+
     // 2. Spawns and connects to new clients processes and then registers them with
     //    the coordinator
     let mut clients: Vec<Child> = Vec::new();

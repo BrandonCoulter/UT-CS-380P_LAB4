@@ -24,4 +24,5 @@ Cargo.lock
 alias.bashrc
 .codio
 logs/*
+.DS_Store
 
