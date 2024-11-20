@@ -43,8 +43,9 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 
     let (tx, rx) = channel().unwrap();
     // TODO
-    
 
+
+    
 
 
     // Return the Child, and communication channels
@@ -91,7 +92,7 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     let mut coordinator = coordinator::Coordinator::new(coord_log_path.clone(), &running);
 
     // Create the IPCOneShotServer
-    let (server, server_name):(IpcOneShotServer<ProtocolMessage>,String)= IpcOneShotServer::new().unwrap();
+    let (server, server_name):(IpcOneShotServer<ProtocolMessage>,String) = IpcOneShotServer::new().unwrap();
 
     // 2. Spawns and connects to new clients processes and then registers them with
     //    the coordinator
@@ -101,6 +102,7 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
         let mut client_opts = opts.clone();
         client_opts.mode = "client".to_string();
         client_opts.num = i;
+        client_opts.ipc_path = server_name;
 
         let (child, tx, rx) = spawn_child_and_connect(&mut client_opts);
         let name = format!("client_{}", i);
@@ -117,6 +119,8 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     for i in 0..opts.num_participants {
         let mut participant_opts = opts.clone();
         participant_opts.mode = "participant".to_string();
+        participant_opts.num = i;
+        participant_opts.ipc_path = server_name.clone();
 
         let (child, tx, rx) = spawn_child_and_connect(&mut participant_opts);
         let name = format!("participant_{}", i);
@@ -153,9 +157,9 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
 fn run_client(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     // 1. Connects to the coordinator to get tx/rx
     let (tx, rx) = connect_to_coordinator(opts);
-    let client_id_str = format!("client_{}", opts.num);
-
+    
     // 2. Constructs a new client
+    let client_id_str = format!("client_{}", opts.num);
     let mut client = client::Client::new(client_id_str, running); //TODO Add channels
 
     // 3. Starts the client protocol
@@ -175,9 +179,9 @@ fn run_client(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
 ///
 fn run_participant(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     let participant_id_str = format!("participant_{}", opts.num);
-    let participant_log_path = format!("{}//{}.log", opts.log_path, participant_id_str);
-
+    
     // 1. Connects to the coordinator to get tx/rx
+    let participant_log_path = format!("{}//{}.log", opts.log_path, participant_id_str);
     let (tx, rx) = connect_to_coordinator(opts);
 
     // 2. Constructs a new participant
