@@ -10,6 +10,7 @@ use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::process::{Child,Command};
+use ipc_channel::ipc;
 use ipc_channel::ipc::IpcSender as Sender;
 use ipc_channel::ipc::IpcReceiver as Receiver;
 use ipc_channel::ipc::IpcOneShotServer;
@@ -36,19 +37,25 @@ use message::ProtocolMessage;
 /// HINT: You can change the signature of the function if necessary
 ///
 fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
+    
+    // 1. Set up IPC
+    // Create the IPCOneShotServer
+    let (server, server_name):(IpcOneShotServer<ProtocolMessage>,String) = IpcOneShotServer::new().unwrap();
+
+    child_opts.ipc_path = server_name.clone();
+    
+    // 2. Spawn a child process using the child CLI options
     let child = Command::new(env::current_exe().unwrap())
         .args(child_opts.as_vec())
         .spawn()
         .expect("Failed to execute child process");
 
     let (tx, rx) = channel().unwrap();
-    // TODO
 
+    // 3. Do any required communication to set up the parent / child communication channels
+    let _ = server.accept().expect("Failed to accept IPC connection");
 
-    
-
-
-    // Return the Child, and communication channels
+    // 4. Return the child process handle and the communication channels for the parent
     (child, tx, rx)
 }
 
@@ -66,8 +73,13 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 fn connect_to_coordinator(opts: &tpcoptions::TPCOptions) -> (Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
     let (tx, rx) = channel().unwrap();
 
-    // TODO
+    // 1. Connect to the parent via IPC
+    let ipc_path = opts.ipc_path.to_string();
 
+    // 2. Do any required communication to set up the parent / child communication channels
+    let _ = Sender::<ProtocolMessage>::connect(ipc_path).expect("Failed to connect to parent");
+
+    // 3. Return the communication channels for the child
     (tx, rx)
 }
 
@@ -91,18 +103,15 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     // 1. Creates a new coordinator
     let mut coordinator = coordinator::Coordinator::new(coord_log_path.clone(), &running);
 
-    // Create the IPCOneShotServer
-    let (server, server_name):(IpcOneShotServer<ProtocolMessage>,String) = IpcOneShotServer::new().unwrap();
-
     // 2. Spawns and connects to new clients processes and then registers them with
     //    the coordinator
     let mut clients: Vec<Child> = Vec::new();
 
     for i in 0..opts.num_clients {
+        
         let mut client_opts = opts.clone();
         client_opts.mode = "client".to_string();
         client_opts.num = i;
-        client_opts.ipc_path = server_name;
 
         let (child, tx, rx) = spawn_child_and_connect(&mut client_opts);
         let name = format!("client_{}", i);
@@ -120,7 +129,6 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
         let mut participant_opts = opts.clone();
         participant_opts.mode = "participant".to_string();
         participant_opts.num = i;
-        participant_opts.ipc_path = server_name.clone();
 
         let (child, tx, rx) = spawn_child_and_connect(&mut participant_opts);
         let name = format!("participant_{}", i);
