@@ -21,12 +21,16 @@ use message;
 use message::MessageType;
 use message::RequestStatus;
 
+use crate::message::ProtocolMessage;
+
 // Client state and primitives for communicating with the coordinator
 #[derive(Debug)]
 pub struct Client {
     pub id_str: String,
     pub running: Arc<AtomicBool>,
     pub num_requests: u32,
+    pub tx: Sender<ProtocolMessage>,
+    pub rx: Receiver<ProtocolMessage>
 }
 
 ///
@@ -51,12 +55,17 @@ impl Client {
     ///       the protocol is still running to this constructor
     ///
     pub fn new(id_str: String,
-               running: Arc<AtomicBool>) -> Client {
+               running: Arc<AtomicBool>,
+               cl_tx: Sender<ProtocolMessage>,
+               cl_rx: Receiver<ProtocolMessage>) -> Client {
         Client {
             id_str: id_str,
             running: running,
             num_requests: 0,
-            // TODO
+            
+            tx: cl_tx,
+            rx: cl_rx
+
         }
     }
 
@@ -67,7 +76,10 @@ impl Client {
     pub fn wait_for_exit_signal(&mut self) {
         trace!("{}::Waiting for exit signal", self.id_str.clone());
 
-        // TODO
+        // Wait until the running flag is set by the CTRL-C handler
+        while !self.running.load(Ordering::SeqCst){
+            println!("Client: {} is running.", self.id_str.clone());
+        }
 
         trace!("{}::Exiting", self.id_str.clone());
     }
@@ -129,6 +141,9 @@ impl Client {
     pub fn protocol(&mut self, n_requests: u32) {
 
         // TODO
+        for i in 0..n_requests {    
+            self.send_next_operation();
+        }
         self.wait_for_exit_signal();
         self.report_status();
     }

@@ -53,7 +53,9 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
     let (tx, rx) = channel().unwrap();
 
     // 3. Do any required communication to set up the parent / child communication channels
-    let _ = server.accept().expect("Failed to accept IPC connection");
+    let (rx, rx_msg) = server.accept().expect("Failed to accept IPC connection");
+
+    println!("RX MSG: {:?}", rx_msg.mtype);
 
     // 4. Return the child process handle and the communication channels for the parent
     (child, tx, rx)
@@ -168,7 +170,7 @@ fn run_client(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     
     // 2. Constructs a new client
     let client_id_str = format!("client_{}", opts.num);
-    let mut client = client::Client::new(client_id_str, running); //TODO Add channels
+    let mut client = client::Client::new(client_id_str, running, tx, rx); //TODO Add channels
 
     // 3. Starts the client protocol
     client.protocol(opts.num_requests);
