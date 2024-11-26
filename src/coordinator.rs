@@ -133,7 +133,43 @@ impl Coordinator {
     ///
     pub fn protocol(&mut self) {
 
+        println!("Starting Coordinator Protocol");
+
         // TODO
+        // Assert that the coordinator is at rest
+        assert!(self.state == CoordinatorState::Quiescent);
+
+        while self.running.load(Ordering::SeqCst) {
+            // Set state to ReceivedRequest and log
+            self.state = CoordinatorState::ReceivedRequest;
+            
+            // Receive request from clients
+            for (name, (_, rx)) in &self.clients {
+                match rx.try_recv() {
+                    Ok(msg) if msg.mtype == MessageType::ClientRequest => {
+                        println!("Received ClientRequest from txid: {}", msg.txid);
+                        // Set state to ReceivedRequest and log
+                        self.state = CoordinatorState::ReceivedRequest;
+                        self.log.append(
+                            MessageType::ClientRequest,
+                            msg.txid.clone(),
+                            msg.senderid.clone(),
+                            msg.opid.clone()
+                        )
+                    },
+                    Ok(_) => {
+                        println!("Haven't received ClientRequest yet");
+                    },
+                    Err(TryRecvError::Empty) => {
+                        // No requests
+                    },
+                    Err(e) => panic!("Failed to receive request from client: {:?}.", e),
+                }
+            }
+
+            thread::sleep(Duration::from_secs(1));
+
+        }
 
         self.report_status();
     }

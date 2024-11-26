@@ -77,8 +77,9 @@ impl Client {
         trace!("{}::Waiting for exit signal", self.id_str.clone());
 
         // Wait until the running flag is set by the CTRL-C handler
-        while !self.running.load(Ordering::SeqCst){
+        while self.running.load(Ordering::SeqCst){
             println!("Client: {} is running.", self.id_str.clone());
+            thread::sleep(Duration::from_secs(1));
         }
 
         trace!("{}::Exiting", self.id_str.clone());
@@ -98,9 +99,12 @@ impl Client {
                                                     self.id_str.clone(),
                                                     self.num_requests);
         info!("{}::Sending operation #{}", self.id_str.clone(), self.num_requests);
+        println!("{}::Sending operation #{}", self.id_str.clone(), self.num_requests);
 
-        // TODO
-
+        // Send the next operation to the coordinator
+        self.tx.send(pm).expect("Failed to send next operation to coordinator.");
+        
+        println!("{}::Sent operation #{}", self.id_str.clone(), self.num_requests);
         trace!("{}::Sent operation #{}", self.id_str.clone(), self.num_requests);
     }
 
@@ -114,7 +118,36 @@ impl Client {
 
         info!("{}::Receiving Coordinator Result", self.id_str.clone());
 
-        // TODO
+        let start_time = std::time::Instant::now();
+        let timeout = std::time::Duration::from_millis(100);
+
+        loop {
+            match self.rx.try_recv() {
+                Ok(msg) => match msg.mtype {
+                    MessageType::ClientResultCommit => {
+                        info!("{}::Received commit result for txid: {}", self.id_str.clone(), msg.txid);
+                        break;
+                    },
+                    MessageType::ClientResultAbort => {
+                        info!("{}::Received abort result from txid: {}", self.id_str.clone(), msg.txid);
+                        break;
+                    },
+                    _ => {
+                        error!("{}::Received unexpected message type: {:?}", self.id_str.clone(), msg.mtype)
+                    }
+                },
+                Err(TryRecvError::Empty) => {
+                    if start_time.elapsed() >= timeout {
+                        error!("{}::Timeout while waiting for result from coordinator", self.id_str.clone());
+                        break;
+                    }
+                },
+                Err(e) => {
+                    error!("{}::Failed to receive result from coordinator: {:?}", self.id_str.clone(), e);
+                    break;
+                }
+            }
+        }
     }
 
     ///
@@ -139,12 +172,18 @@ impl Client {
     ///       exit signal before returning from the protocol method!
     ///
     pub fn protocol(&mut self, n_requests: u32) {
-
-        // TODO
-        for i in 0..n_requests {    
+        for _ in 0..n_requests {
+            // Send the next operation
             self.send_next_operation();
+
+            // Receive the results from the Coordinator
+            self.recv_result();
         }
+
+        // Wait for exit signal or ctrl-c
         self.wait_for_exit_signal();
+
+        // Report status
         self.report_status();
     }
 }

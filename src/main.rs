@@ -15,6 +15,8 @@ use ipc_channel::ipc::IpcSender as Sender;
 use ipc_channel::ipc::IpcReceiver as Receiver;
 use ipc_channel::ipc::IpcOneShotServer;
 use ipc_channel::ipc::channel;
+use std::thread;
+use std::time::Duration;
 pub mod message;
 pub mod oplog;
 pub mod coordinator;
@@ -37,29 +39,45 @@ use message::ProtocolMessage;
 /// HINT: You can change the signature of the function if necessary
 ///
 fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
-    
     // 1. Set up IPC
-    // Create the IPCOneShotServer
-    let (server, server_name):(IpcOneShotServer<ProtocolMessage>,String) = IpcOneShotServer::new().unwrap();
-
+    let (server, server_name): (IpcOneShotServer<ProtocolMessage>, String) = IpcOneShotServer::new().unwrap();
     child_opts.ipc_path = server_name.clone();
-    
+
+    println!("Setting up IPC Server at {}.", server_name);
+
     // 2. Spawn a child process using the child CLI options
     let child = Command::new(env::current_exe().unwrap())
         .args(child_opts.as_vec())
         .spawn()
         .expect("Failed to execute child process");
 
-    let (tx, rx) = channel().unwrap();
+    println!("Spawned child process with PID: {}.", child.id());
 
-    // 3. Do any required communication to set up the parent / child communication channels
-    let (rx, rx_msg) = server.accept().expect("Failed to accept IPC connection");
+    // Add a delay to ensure the child process is ready
+    thread::sleep(Duration::from_secs(1));
 
-    println!("RX MSG: {:?}", rx_msg.mtype);
+    // 3. Accept the IPC connection from the child process
+    match server.accept() {
+        Ok((rx, _)) => {
+            println!("Accepted IPC connection from child.");
+            let (tx, rx_local) = channel().unwrap();
+            println!("Created IPC communication channels");
 
-    // 4. Return the child process handle and the communication channels for the parent
-    (child, tx, rx)
+            // 4. Return the child process handle and the communication channels for the parent
+            (child, tx, rx_local)
+        }
+        Err(e) => {
+            println!("Failed to accept IPC connection while spawning child: {:?}", e);
+            panic!("Failed to accept IPC connection while spawning child.");
+        }
+    }
 }
+
+
+
+
+
+
 
 ///
 /// pub fn connect_to_coordinator(opts: &tpcoptions::TPCOptions) -> (Sender<ProtocolMessage>, Receiver<ProtocolMessage>)
@@ -73,17 +91,40 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 /// HINT: You can change the signature of the function if necessasry
 ///
 fn connect_to_coordinator(opts: &tpcoptions::TPCOptions) -> (Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
-    let (tx, rx) = channel().unwrap();
-
-    // 1. Connect to the parent via IPC
     let ipc_path = opts.ipc_path.to_string();
+    println!("Connecting to IPC server at {}.", ipc_path);
 
-    // 2. Do any required communication to set up the parent / child communication channels
-    let _ = Sender::<ProtocolMessage>::connect(ipc_path).expect("Failed to connect to parent");
+    // Retry mechanism to connect to the IPC server
+    let mut connected = false;
+    let mut attempts = 0;
+    let max_attempts = 5;
 
-    // 3. Return the communication channels for the child
-    (tx, rx)
+    while !connected && attempts < max_attempts {
+        match Sender::<ProtocolMessage>::connect(ipc_path.clone()) {
+            Ok(tx) => {
+                let (local_tx, local_rx) = channel().unwrap();
+                println!("Connected to IPC server.");
+
+                // Keep the child process alive for an extended period
+                thread::sleep(Duration::from_secs(10));
+
+                return (local_tx, local_rx);
+            }
+            Err(e) => {
+                attempts += 1;
+                println!("Failed to connect to IPC server: {:?}. Retrying {}/{}", e, attempts, max_attempts);
+                thread::sleep(Duration::from_millis(1000)); // Retry after 1000 milliseconds
+            }
+        }
+    }
+
+    panic!("Failed to connect to IPC server after {} attempts", max_attempts);
 }
+
+
+
+
+
 
 ///
 /// pub fn run(opts: &tpcoptions:TPCOptions, running: Arc<AtomicBool>)
@@ -105,6 +146,8 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     // 1. Creates a new coordinator
     let mut coordinator = coordinator::Coordinator::new(coord_log_path.clone(), &running);
 
+    println!("Coordinator Created");
+
     // 2. Spawns and connects to new clients processes and then registers them with
     //    the coordinator
     let mut clients: Vec<Child> = Vec::new();
@@ -115,6 +158,8 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
         client_opts.mode = "client".to_string();
         client_opts.num = i;
 
+        println!("Spawning Client {}", i);
+
         let (child, tx, rx) = spawn_child_and_connect(&mut client_opts);
         let name = format!("client_{}", i);
         coordinator.client_join(&name, tx, rx);
@@ -122,6 +167,8 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
         clients.push(child);
 
     }
+
+    println!("Clients Spawned");
 
     // 3. Spawns and connects to new participant processes and then registers them
     //    with the coordinator
@@ -139,6 +186,9 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
 
         participants.push(child);
     }
+
+    println!("Participants Spawned");
+
 
     // 4. Starts the coordinator protocol
     coordinator.protocol();
@@ -170,7 +220,7 @@ fn run_client(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     
     // 2. Constructs a new client
     let client_id_str = format!("client_{}", opts.num);
-    let mut client = client::Client::new(client_id_str, running, tx, rx); //TODO Add channels
+    let mut client = client::Client::new(client_id_str, running, tx, rx);
 
     // 3. Starts the client protocol
     client.protocol(opts.num_requests);
