@@ -60,9 +60,9 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 
     info!("Server Accept Message: {:?}", rx_msg);
 
-    let (tx, rx_local) = channel().unwrap();
+    let (tx, _) = channel().unwrap();
 
-    return (child, tx, rx_local)
+    return (child, tx, rx)
 
 }
 
