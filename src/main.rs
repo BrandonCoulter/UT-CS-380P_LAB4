@@ -53,7 +53,7 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 
     info!("Spawned child process with PID: {}.", child.id());
 
-    // thread::sleep(Duration::from_secs(1));
+    thread::sleep(Duration::from_secs(1));
 
     // 3. Accept the IPC connection from the child process
     let (rx, rx_msg): (Receiver<ProtocolMessage>, ProtocolMessage) = server.accept().unwrap();
@@ -64,21 +64,6 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 
     return (child, tx, rx_local)
 
-
-    // match server.accept() {
-    //     Ok((rx, _)) => {
-    //         info!("Accepted IPC connection from child.");
-    //         let (tx, rx_local) = channel().unwrap();
-    //         info!("Created IPC communication channels");
-
-    //         // 4. Return the child process handle and the communication channels for the parent
-    //         return (child, tx, rx_local)
-    //     }
-    //     Err(e) => {
-    //         info!("Failed to accept IPC connection while spawning child: {:?}", e);
-    //         panic!("Failed to accept IPC connection while spawning child.");
-    //     }
-    // }
 }
 
 
@@ -106,41 +91,12 @@ fn connect_to_coordinator(opts: &tpcoptions::TPCOptions) -> (Sender<ProtocolMess
 
     info!("Sender channel connected to Coordinator.");
 
-    let (tx, c_rx) = channel().unwrap();
+    let (_, c_rx) = channel().unwrap();
 
     info!("Creating child tx/rx channels.");
 
     return (c_tx, c_rx)
 
-    
-
-
-    // Retry mechanism to connect to the IPC server
-    // let mut connected = false;
-    // let mut attempts = 0;
-    // let max_attempts = 5;
-
-    // while !connected && attempts < max_attempts {
-    //     match Sender::<ProtocolMessage>::connect(ipc_path.clone()) {
-    //         Ok(tx) => {
-    //             let (local_tx, local_rx) = channel().unwrap();
-    //             info!("Connected to IPC server.");
-
-    //             // Keep the child process alive for an extended period
-    //             thread::sleep(Duration::from_secs(2)); // Increased sleep duration
-
-    //             return (local_tx, local_rx);
-    //         }
-    //         Err(e) => {
-    //             attempts += 1;
-    //             println!("Failed to connect to IPC server: {:?}. Retrying {}/{}", e, attempts, max_attempts);
-    //             thread::sleep(Duration::from_millis(1500)); // Increased retry wait time
-    //         }
-    //     }
-    // }
-
-
-    // panic!("Failed to connect to IPC server after {} attempts", max_attempts);
 }
 
 
@@ -265,20 +221,20 @@ fn run_client(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
 /// 3. Starts the participant protocol
 ///
 fn run_participant(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
-    let participant_id_str = format!("participant_{}", opts.num);
-    
     // 1. Connects to the coordinator to get tx/rx
-    let participant_log_path = format!("{}//{}.log", opts.log_path, participant_id_str);
     let (tx, rx) = connect_to_coordinator(opts);
-
+    
     // 2. Constructs a new participant
+    let participant_id_str = format!("participant_{}", opts.num);
+    let participant_log_path = format!("{}//{}.log", opts.log_path, participant_id_str);
+
     let mut participant = participant::Participant::new(participant_id_str,
         participant_log_path,
         running,
         opts.send_success_probability,
         opts.operation_success_probability,
         tx,
-        rx); //TODO Add channels
+        rx);
 
     // 3. Starts the participant protocol
     participant.protocol();

@@ -95,7 +95,6 @@ impl Participant {
             tx: ctx,
             rx: crx,
 
-
         }
     }
 
@@ -143,8 +142,6 @@ impl Participant {
             info!("Operation probabilistically failed for request: {:?}", request_option);
             return false
         }
-
-        return true
     }
 
     ///
