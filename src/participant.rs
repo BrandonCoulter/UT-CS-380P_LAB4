@@ -49,6 +49,8 @@ pub struct Participant {
     running: Arc<AtomicBool>,
     send_success_prob: f64,
     operation_success_prob: f64,
+    tx: Sender<ProtocolMessage>,
+    rx: Receiver<ProtocolMessage>,
 }
 
 ///
@@ -78,7 +80,9 @@ impl Participant {
         log_path: String,
         r: Arc<AtomicBool>,
         send_success_prob: f64,
-        operation_success_prob: f64) -> Participant {
+        operation_success_prob: f64,
+        ctx: Sender<ProtocolMessage>,
+        crx: Receiver<ProtocolMessage>) -> Participant {
 
         Participant {
             id_str: id_str,
@@ -88,6 +92,10 @@ impl Participant {
             send_success_prob: send_success_prob,
             operation_success_prob: operation_success_prob,
             // TODO
+            tx: ctx,
+            rx: crx,
+
+
         }
     }
 
@@ -103,8 +111,10 @@ impl Participant {
         let x: f64 = random();
         if x <= self.send_success_prob {
             // TODO: Send success
+            self.tx.send(pm).expect("Failed to send protocol message to coordnator.");
         } else {
             // TODO: Send fail
+            info!("Message sending failed due to probabilistic failure.");
         }
     }
 
@@ -126,11 +136,15 @@ impl Participant {
         let x: f64 = random();
         if x <= self.operation_success_prob {
             // TODO: Successful operation
+            info!("Operation performed successfully for request: {:?}", request_option);
+            return true
         } else {
             // TODO: Failed operation
+            info!("Operation probabilistically failed for request: {:?}", request_option);
+            return false
         }
 
-        true
+        return true
     }
 
     ///
@@ -155,6 +169,10 @@ impl Participant {
         trace!("{}::Waiting for exit signal", self.id_str.clone());
 
         // TODO
+        while self.running.load(Ordering::SeqCst){
+            println!("Participant: {} is running.", self.id_str.clone());
+            thread::sleep(Duration::from_secs(1));
+        }
 
         trace!("{}::Exiting", self.id_str.clone());
     }
@@ -167,9 +185,35 @@ impl Participant {
     ///
     pub fn protocol(&mut self) {
         trace!("{}::Beginning protocol", self.id_str.clone());
-
-        // TODO
-
+        while self.running.load(Ordering::SeqCst) {
+            match self.rx.try_recv() {
+                Ok(msg) => {
+                match msg.mtype {
+                    MessageType::CoordinatorPropose => {
+                        self.state = ParticipantState::ReceivedP1;
+                        let result = self.perform_operation(&Some(msg.clone()));
+                        let response_type = if result { MessageType::ParticipantVoteCommit } else { MessageType::ParticipantVoteAbort };
+                        let response = ProtocolMessage::generate(response_type, msg.txid.clone(), self.id_str.clone(), msg.opid); self.send(response);
+                    },
+                    MessageType::CoordinatorCommit => {
+                        self.state = ParticipantState::VotedCommit;
+                        self.log.append(MessageType::CoordinatorCommit, msg.txid.clone(), msg.senderid.clone(), msg.opid);
+                    },
+                    MessageType::CoordinatorAbort => {
+                        self.state = ParticipantState::VotedAbort;
+                        self.log.append(MessageType::CoordinatorAbort, msg.txid.clone(), msg.senderid.clone(), msg.opid);
+                    }, 
+                    _ => (), 
+                    }
+                },
+                Err(TryRecvError::Empty) => {
+                    thread::sleep(Duration::from_millis(100));
+                },
+                Err(e) => {
+                    panic!("PANIC: {}::Failed to receive message: {:?}", self.id_str.clone(), e);
+                }
+            }
+        }
         self.wait_for_exit_signal();
         self.report_status();
     }
