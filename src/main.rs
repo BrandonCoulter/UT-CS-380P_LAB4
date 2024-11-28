@@ -38,7 +38,7 @@ use message::ProtocolMessage;
 ///
 /// HINT: You can change the signature of the function if necessary
 ///
-fn spawn_child_and_connect(child_opts: &mut TPCOptions) -> (Child, Sender<ProtocolMessage>, IpcReceiver<ProtocolMessage>) {
+fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
     // 1. Set up IPC
     let (server, server_name): (IpcOneShotServer<Sender<ProtocolMessage>>, String) = IpcOneShotServer::new().unwrap();
     child_opts.ipc_path = server_name.clone();
@@ -54,14 +54,15 @@ fn spawn_child_and_connect(child_opts: &mut TPCOptions) -> (Child, Sender<Protoc
     info!("Spawned child process with PID: {}.", child.id());
 
     // 3. Accept the IPC connection from the child process
-    let (child_tx, accept_msg): (Sender<ProtocolMessage>, ProtocolMessage) = server.accept().unwrap();
+    let (child_tx, accept_msg) = server.accept().unwrap();
+    let c_tx = child_tx.recv().unwrap();
 
     info!("Server Accept Message: {:?}", accept_msg);
 
     // Create a local receiver
     let (_, rx_local) = ipc_channel::ipc::channel::<ProtocolMessage>().unwrap();
 
-    return (child, child_tx, rx_local)
+    return (child, c_tx, rx_local)
 }
 
 
@@ -82,7 +83,7 @@ fn spawn_child_and_connect(child_opts: &mut TPCOptions) -> (Child, Sender<Protoc
 ///
 /// HINT: You can change the signature of the function if necessasry
 ///
-fn connect_to_coordinator(opts: &TPCOptions) -> (Sender<ProtocolMessage>, IpcReceiver<ProtocolMessage>) {
+fn connect_to_coordinator(opts: &tpcoptions::TPCOptions) -> (Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
     let ipc_path = opts.ipc_path.to_string();
     info!("Connecting to IPC server at {}.", ipc_path);
     let coordinator_tx = Sender::connect(ipc_path).unwrap();
@@ -92,16 +93,10 @@ fn connect_to_coordinator(opts: &TPCOptions) -> (Sender<ProtocolMessage>, IpcRec
     let (child_tx, child_rx): (Sender<ProtocolMessage>, Receiver<ProtocolMessage>) = channel().unwrap();
 
     info!("Sending child tx channel to coordinator.");
-    coordinator_tx.send(child_tx).unwrap();
+    coordinator_tx.send(child_tx.clone()).unwrap();
 
-    return (coordinator_tx, child_rx)
+    return (child_tx, child_rx)
 }
-
-
-
-
-
-
 
 ///
 /// pub fn run(opts: &tpcoptions:TPCOptions, running: Arc<AtomicBool>)
