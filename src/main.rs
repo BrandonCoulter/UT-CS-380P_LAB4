@@ -53,11 +53,15 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 
     info!("Spawned child process with PID: {}.", child.id());
 
+    info!("Attempting to accpet IPC connection in Coordinator");
     // 3. Accept the IPC connection from the child process
     let (child_tx, accept_msg) = server.accept().unwrap();
-    let c_tx = child_tx.recv().unwrap();
-
     info!("Server Accept Message: {:?}", accept_msg);
+
+    info!("Getting the tx channel from child_tx");
+    let c_tx = child_tx.try_recv_timeout(Duration::from_millis(100)).unwrap();
+    info!("Finished getting the tx channel from child_tx");
+
 
     // Create a local receiver
     let (_, rx_local) = ipc_channel::ipc::channel::<ProtocolMessage>().unwrap();
@@ -95,6 +99,10 @@ fn connect_to_coordinator(opts: &tpcoptions::TPCOptions) -> (Sender<ProtocolMess
     info!("Sending child tx channel to coordinator.");
     coordinator_tx.send(child_tx.clone()).unwrap();
 
+    info!("Briefly Pausing Execution");
+    thread::sleep(Duration::from_secs(2));
+    info!("Completed Pause");
+    
     return (child_tx, child_rx)
 }
 
@@ -118,7 +126,7 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     // 1. Creates a new coordinator
     let mut coordinator = coordinator::Coordinator::new(coord_log_path.clone(), &running);
 
-    println!("Coordinator Created");
+    info!("Coordinator Created");
 
     // 2. Spawns and connects to new clients processes and then registers them with
     //    the coordinator
@@ -130,7 +138,7 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
         client_opts.mode = "client".to_string();
         client_opts.num = i;
 
-        println!("Spawning Client {}", i);
+        info!("Spawning Client {}", i);
 
         let (child, tx, rx) = spawn_child_and_connect(&mut client_opts);
         let name = format!("client_{}", i);
@@ -140,7 +148,7 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
 
     }
 
-    println!("Clients Spawned");
+    info!("All Clients Spawned");
 
     // 3. Spawns and connects to new participant processes and then registers them
     //    with the coordinator
@@ -151,6 +159,8 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
         participant_opts.mode = "participant".to_string();
         participant_opts.num = i;
 
+        info!("Spawning Participant {}", i);
+
         let (child, tx, rx) = spawn_child_and_connect(&mut participant_opts);
         let name = format!("participant_{}", i);
 
@@ -159,24 +169,22 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
         participants.push(child);
     }
 
-    println!("Participants Spawned");
+    info!("All Participants Spawned");
 
 
     // 4. Starts the coordinator protocol
     coordinator.protocol();
 
+
+    info!("Waiting on Clients");
     // 5. Wait until the children finish execution
-    // for mut client in clients{
-    //     let _ = client.wait();
-    // }
+    for mut client in clients{
+        let _ = client.wait();
+    }
 
-    // for mut participant in participants{
-    //     let _ = participant.wait();
-    // }
-
-    while running.load(Ordering::SeqCst) {
-        info!("Running in main.rs");
-        thread::sleep(Duration::from_millis(500));
+    info!("Waiting on Participants");
+    for mut participant in participants{
+        let _ = participant.wait();
     }
 
 }
@@ -260,6 +268,8 @@ fn main() {
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
     let m = opts.mode.clone();
+
+    info!("Initializing Ctrl-C Handler");
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
         if m == "run" {
