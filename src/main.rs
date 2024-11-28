@@ -38,9 +38,9 @@ use message::ProtocolMessage;
 ///
 /// HINT: You can change the signature of the function if necessary
 ///
-fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
+fn spawn_child_and_connect(child_opts: &mut TPCOptions) -> (Child, Sender<ProtocolMessage>, IpcReceiver<ProtocolMessage>) {
     // 1. Set up IPC
-    let (server, server_name): (IpcOneShotServer<ProtocolMessage>, String) = IpcOneShotServer::new().unwrap();
+    let (server, server_name): (IpcOneShotServer<Sender<ProtocolMessage>>, String) = IpcOneShotServer::new().unwrap();
     child_opts.ipc_path = server_name.clone();
 
     info!("Setting up IPC Server at {}.", server_name);
@@ -53,18 +53,17 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 
     info!("Spawned child process with PID: {}.", child.id());
 
-    thread::sleep(Duration::from_secs(1));
-
     // 3. Accept the IPC connection from the child process
-    let (rx, rx_msg): (Receiver<ProtocolMessage>, ProtocolMessage) = server.accept().unwrap();
+    let (child_tx, accept_msg): (Sender<ProtocolMessage>, ProtocolMessage) = server.accept().unwrap();
 
-    info!("Server Accept Message: {:?}", rx_msg);
+    info!("Server Accept Message: {:?}", accept_msg);
 
-    let (tx, rx_local) = channel().unwrap();
+    // Create a local receiver
+    let (_, rx_local) = ipc_channel::ipc::channel::<ProtocolMessage>().unwrap();
 
-    return (child, tx, rx_local)
-
+    return (child, child_tx, rx_local)
 }
+
 
 
 
@@ -83,21 +82,21 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 ///
 /// HINT: You can change the signature of the function if necessasry
 ///
-fn connect_to_coordinator(opts: &tpcoptions::TPCOptions) -> (Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
+fn connect_to_coordinator(opts: &TPCOptions) -> (Sender<ProtocolMessage>, IpcReceiver<ProtocolMessage>) {
     let ipc_path = opts.ipc_path.to_string();
     info!("Connecting to IPC server at {}.", ipc_path);
-
-    let c_tx = Sender::<ProtocolMessage>::connect(ipc_path).unwrap();
-
+    let coordinator_tx = Sender::connect(ipc_path).unwrap();
     info!("Sender channel connected to Coordinator.");
 
-    let (_, c_rx) = channel().unwrap();
-
     info!("Creating child tx/rx channels.");
+    let (child_tx, child_rx): (Sender<ProtocolMessage>, Receiver<ProtocolMessage>) = channel().unwrap();
 
-    return (c_tx, c_rx)
+    info!("Sending child tx channel to coordinator.");
+    coordinator_tx.send(child_tx).unwrap();
 
+    return (coordinator_tx, child_rx)
 }
+
 
 
 
@@ -199,11 +198,11 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
 ///
 fn run_client(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     // 1. Connects to the coordinator to get tx/rx
-    let (tx, rx) = connect_to_coordinator(opts);
+    let (client_tx, client_rx) = connect_to_coordinator(opts);
     
     // 2. Constructs a new client
     let client_id_str = format!("client_{}", opts.num);
-    let mut client = client::Client::new(client_id_str, running, tx, rx);
+    let mut client = client::Client::new(client_id_str, running, client_tx, client_rx);
 
     // 3. Starts the client protocol
     client.protocol(opts.num_requests);
@@ -222,7 +221,7 @@ fn run_client(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
 ///
 fn run_participant(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     // 1. Connects to the coordinator to get tx/rx
-    let (tx, rx) = connect_to_coordinator(opts);
+    let (participant_tx, participant_rx) = connect_to_coordinator(opts);
     
     // 2. Constructs a new participant
     let participant_id_str = format!("participant_{}", opts.num);
@@ -233,8 +232,8 @@ fn run_participant(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
         running,
         opts.send_success_probability,
         opts.operation_success_probability,
-        tx,
-        rx);
+        participant_tx,
+        participant_rx);
 
     // 3. Starts the participant protocol
     participant.protocol();

@@ -178,6 +178,7 @@ impl Client {
 
             // Receive the results from the Coordinator
             self.recv_result();
+            thread::sleep(Duration::from_millis(500));
         }
 
         // Wait for exit signal or ctrl-c
