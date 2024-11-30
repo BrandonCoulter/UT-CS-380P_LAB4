@@ -15,6 +15,7 @@ use ipc_channel::ipc::IpcSender as Sender;
 use ipc_channel::ipc::IpcReceiver as Receiver;
 use ipc_channel::ipc::IpcOneShotServer;
 use ipc_channel::ipc::channel;
+use stderrlog::new;
 use std::thread;
 use std::time::Duration;
 pub mod message;
@@ -40,7 +41,7 @@ use message::ProtocolMessage;
 ///
 fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
     // 1. Set up IPC
-    let (server, server_name): (IpcOneShotServer<Sender<ProtocolMessage>>, String) = IpcOneShotServer::new().unwrap();
+    let (server, server_name): (IpcOneShotServer<ProtocolMessage>, String) = IpcOneShotServer::new().unwrap();
     child_opts.ipc_path = server_name.clone();
 
     info!("Setting up IPC Server at {}.", server_name);
@@ -53,20 +54,26 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 
     info!("Spawned child process with PID: {}.", child.id());
 
-    info!("Attempting to accpet IPC connection in Coordinator");
-    // 3. Accept the IPC connection from the child process
-    let (child_tx, accept_msg) = server.accept().unwrap();
+    info!("Attempting to accept IPC connection in Coordinator");
+    let (child_rx, accept_msg) = server.accept().unwrap();
+
+    // // 3. Accept the IPC connection from the child process
+    // let (child_rx, accept_msg) = server.accept().unwrap();
     info!("Server Accept Message: {:?}", accept_msg);
 
-    info!("Getting the tx channel from child_tx");
-    let c_tx = child_tx.try_recv_timeout(Duration::from_millis(100)).unwrap();
-    info!("Finished getting the tx channel from child_tx");
+    // info!("Getting the tx channel from child_tx");
+    // let c_tx = child_tx.try_recv_timeout(Duration::from_millis(100)).unwrap();
+    // info!("Finished getting the tx channel from child_tx");
 
+    info!("Creating Child Channels");
+    // let (child_tx, child_rx) = channel().unwrap();
+    let child_tx : Sender<ProtocolMessage> = Sender::<ProtocolMessage>::connect(child_opts.ipc_path.clone()).unwrap();
+    info!("Child channels created, returning.");
 
     // Create a local receiver
-    let (_, rx_local) = ipc_channel::ipc::channel::<ProtocolMessage>().unwrap();
+    // let (tx_local, _) = ipc_channel::ipc::channel::<ProtocolMessage>().unwrap();
 
-    return (child, c_tx, rx_local)
+    return (child, child_tx, child_rx)
 }
 
 
@@ -94,16 +101,12 @@ fn connect_to_coordinator(opts: &tpcoptions::TPCOptions) -> (Sender<ProtocolMess
     info!("Sender channel connected to Coordinator.");
 
     info!("Creating child tx/rx channels.");
-    let (child_tx, child_rx): (Sender<ProtocolMessage>, Receiver<ProtocolMessage>) = channel().unwrap();
+    let (_, child_rx): (Sender<ProtocolMessage>, Receiver<ProtocolMessage>) = channel().unwrap();
 
     info!("Sending child tx channel to coordinator.");
-    coordinator_tx.send(child_tx.clone()).unwrap();
+    // coordinator_tx.send("Test".to_string()).unwrap();
 
-    info!("Briefly Pausing Execution");
-    thread::sleep(Duration::from_secs(2));
-    info!("Completed Pause");
-    
-    return (child_tx, child_rx)
+    return (coordinator_tx, child_rx)
 }
 
 ///
