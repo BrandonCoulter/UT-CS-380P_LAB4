@@ -185,29 +185,30 @@ impl Participant {
         while self.running.load(Ordering::SeqCst) {
             match self.rx.try_recv() {
                 Ok(msg) => {
-                match msg.mtype {
-                    MessageType::CoordinatorPropose => {
-                        self.state = ParticipantState::ReceivedP1;
-                        let result = self.perform_operation(&Some(msg.clone()));
-                        let response_type = if result { MessageType::ParticipantVoteCommit } else { MessageType::ParticipantVoteAbort };
-                        let response = ProtocolMessage::generate(response_type, msg.txid.clone(), self.id_str.clone(), msg.opid); self.send(response);
-                    },
-                    MessageType::CoordinatorCommit => {
-                        self.state = ParticipantState::VotedCommit;
-                        self.log.append(MessageType::CoordinatorCommit, msg.txid.clone(), msg.senderid.clone(), msg.opid);
-                    },
-                    MessageType::CoordinatorAbort => {
-                        self.state = ParticipantState::VotedAbort;
-                        self.log.append(MessageType::CoordinatorAbort, msg.txid.clone(), msg.senderid.clone(), msg.opid);
-                    }, 
-                    _ => (), 
+                    match msg.mtype {
+                        MessageType::CoordinatorPropose => {
+                            self.state = ParticipantState::ReceivedP1;
+                            let result = self.perform_operation(&Some(msg.clone()));
+                            let response_type = if result { MessageType::ParticipantVoteCommit } else { MessageType::ParticipantVoteAbort };
+                            let response = ProtocolMessage::generate(response_type, msg.txid.clone(), self.id_str.clone(), msg.opid); self.send(response);
+                        },
+                        MessageType::CoordinatorCommit => {
+                            self.state = ParticipantState::VotedCommit;
+                            self.log.append(MessageType::CoordinatorCommit, msg.txid.clone(), msg.senderid.clone(), msg.opid);
+                        },
+                        MessageType::CoordinatorAbort => {
+                            self.state = ParticipantState::VotedAbort;
+                            self.log.append(MessageType::CoordinatorAbort, msg.txid.clone(), msg.senderid.clone(), msg.opid);
+                        }, 
+                        _ => (), 
                     }
                 },
                 Err(TryRecvError::Empty) => {
+                    info!("Empty Message in the participant");
                     thread::sleep(Duration::from_millis(100));
                 },
                 Err(e) => {
-                    panic!("PANIC: {}::Failed to receive message: {:?}", self.id_str.clone(), e);
+                    error!("PANIC: {}::Failed to receive message: {:?}", self.id_str.clone(), e);
                 }
             }
         }

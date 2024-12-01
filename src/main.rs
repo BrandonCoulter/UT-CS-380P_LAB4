@@ -40,6 +40,7 @@ use message::ProtocolMessage;
 /// HINT: You can change the signature of the function if necessary
 ///
 fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
+    trace!("Spawning child and connecting to coordinator");
     // 1. Set up IPC
     let (server, server_name): (IpcOneShotServer<ProtocolMessage>, String) = IpcOneShotServer::new().unwrap();
     child_opts.ipc_path = server_name.clone();
@@ -57,22 +58,14 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
     info!("Attempting to accept IPC connection in Coordinator");
     let (child_rx, accept_msg) = server.accept().unwrap();
 
-    // // 3. Accept the IPC connection from the child process
-    // let (child_rx, accept_msg) = server.accept().unwrap();
+    // 3. Accept the IPC connection from the child process
     info!("Server Accept Message: {:?}", accept_msg);
 
-    // info!("Getting the tx channel from child_tx");
-    // let c_tx = child_tx.try_recv_timeout(Duration::from_millis(100)).unwrap();
-    // info!("Finished getting the tx channel from child_tx");
-
     info!("Creating Child Channels");
-    // let (child_tx, child_rx) = channel().unwrap();
     let child_tx : Sender<ProtocolMessage> = Sender::<ProtocolMessage>::connect(child_opts.ipc_path.clone()).unwrap();
-    info!("Child channels created, returning.");
-
-    // Create a local receiver
-    // let (tx_local, _) = ipc_channel::ipc::channel::<ProtocolMessage>().unwrap();
-
+    
+    // 4. Return the child process handle and the communication channels for the parent
+    trace!("Child channels created, returning.");
     return (child, child_tx, child_rx)
 }
 
@@ -95,17 +88,16 @@ fn spawn_child_and_connect(child_opts: &mut tpcoptions::TPCOptions) -> (Child, S
 /// HINT: You can change the signature of the function if necessasry
 ///
 fn connect_to_coordinator(opts: &tpcoptions::TPCOptions) -> (Sender<ProtocolMessage>, Receiver<ProtocolMessage>) {
+    trace!("Conntecting to coordinator");
     let ipc_path = opts.ipc_path.to_string();
     info!("Connecting to IPC server at {}.", ipc_path);
-    let coordinator_tx = Sender::connect(ipc_path).unwrap();
+    let coordinator_tx = Sender::<ProtocolMessage>::connect(ipc_path).unwrap();
     info!("Sender channel connected to Coordinator.");
 
     info!("Creating child tx/rx channels.");
-    let (_, child_rx): (Sender<ProtocolMessage>, Receiver<ProtocolMessage>) = channel().unwrap();
+    let (_, child_rx): (_, Receiver<ProtocolMessage>) = channel().unwrap();
 
-    info!("Sending child tx channel to coordinator.");
-    // coordinator_tx.send("Test".to_string()).unwrap();
-
+    trace!("Connected to coordinator");
     return (coordinator_tx, child_rx)
 }
 
@@ -168,6 +160,7 @@ fn run(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
         let name = format!("participant_{}", i);
 
         coordinator.participant_join(&name, tx, rx);
+        info!("Participant {} joined", i);
 
         participants.push(child);
     }
@@ -208,7 +201,7 @@ fn run_client(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     
     // 2. Constructs a new client
     let client_id_str = format!("client_{}", opts.num);
-    let mut client = client::Client::new(client_id_str, running, client_tx, client_rx);
+    let mut client = client::Client::new(client_id_str.clone(), running.clone(), client_tx.clone(), client_rx);
 
     // 3. Starts the client protocol
     client.protocol(opts.num_requests);
@@ -233,13 +226,15 @@ fn run_participant(opts: & tpcoptions::TPCOptions, running: Arc<AtomicBool>) {
     let participant_id_str = format!("participant_{}", opts.num);
     let participant_log_path = format!("{}//{}.log", opts.log_path, participant_id_str);
 
-    let mut participant = participant::Participant::new(participant_id_str,
-        participant_log_path,
-        running,
-        opts.send_success_probability,
-        opts.operation_success_probability,
-        participant_tx,
+    let mut participant = participant::Participant::new(participant_id_str.clone(),
+        participant_log_path.clone(),
+        running.clone(),
+        opts.send_success_probability.clone(),
+        opts.operation_success_probability.clone(),
+        participant_tx.clone(),
         participant_rx);
+
+    info!("Stating participant protocol for {}", participant_id_str.clone());
 
     // 3. Starts the participant protocol
     participant.protocol();

@@ -78,7 +78,7 @@ impl Client {
 
         // Wait until the running flag is set by the CTRL-C handler
         while self.running.load(Ordering::SeqCst){
-            println!("Client: {} is running.", self.id_str.clone());
+            trace!("Client: {} is waiting for exit signal.", self.id_str.clone());
             thread::sleep(Duration::from_secs(1));
         }
 
@@ -99,12 +99,10 @@ impl Client {
                                                     self.id_str.clone(),
                                                     self.num_requests);
         info!("{}::Sending operation #{}", self.id_str.clone(), self.num_requests);
-        println!("{}::Sending operation #{}", self.id_str.clone(), self.num_requests);
 
         // Send the next operation to the coordinator
         self.tx.send(pm).expect("Failed to send next operation to coordinator.");
         
-        println!("{}::Sent operation #{}", self.id_str.clone(), self.num_requests);
         trace!("{}::Sent operation #{}", self.id_str.clone(), self.num_requests);
     }
 
@@ -119,7 +117,7 @@ impl Client {
         info!("{}::Receiving Coordinator Result", self.id_str.clone());
 
         let start_time = std::time::Instant::now();
-        let timeout = std::time::Duration::from_millis(100);
+        let timeout = std::time::Duration::from_millis(1000);
 
         loop {
             match self.rx.try_recv() {
@@ -172,13 +170,13 @@ impl Client {
     ///       exit signal before returning from the protocol method!
     ///
     pub fn protocol(&mut self, n_requests: u32) {
+        thread::sleep(Duration::from_millis(1000));
         for _ in 0..n_requests {
             // Send the next operation
             self.send_next_operation();
 
             // Receive the results from the Coordinator
             self.recv_result();
-            thread::sleep(Duration::from_millis(500));
         }
 
         // Wait for exit signal or ctrl-c
